@@ -13,3 +13,6 @@ serde_json = "1.0.116"
 
 [[bin]]
 name = "echo"
+
+[[bin]]
+name = "unique_id_generation"
