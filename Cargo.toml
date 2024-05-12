@@ -16,3 +16,6 @@ name = "echo"
 
 [[bin]]
 name = "unique_id_generation"
+
+[[bin]]
+name = "single_node_broadcast"

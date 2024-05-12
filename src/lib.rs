@@ -2,7 +2,8 @@ use std::io;
 
 use anyhow::Context;
 use message::{
-    EchoMessage, ErrorMessage, GenerateOkMessage, InitMessage, Message, MessageType, Payload,
+    BroadcastMessage, EchoMessage, ErrorMessage, GenerateOkMessage, InitMessage, Message,
+    MessageType, Payload, ReadOkMessage, TopologyMessage,
 };
 use serde_json::Deserializer;
 
@@ -50,6 +51,7 @@ pub trait Node {
                 {
                     return m;
                 }
+
                 self.handle_error(MessageContext::new(
                     message.payload.message_id,
                     message.source,
@@ -61,6 +63,7 @@ pub trait Node {
                 {
                     return m;
                 }
+
                 self.handle_echo(MessageContext::new(
                     message.payload.message_id,
                     message.source,
@@ -77,6 +80,7 @@ pub trait Node {
                 {
                     return m;
                 }
+
                 self.handle_generate(MessageContext::new(
                     message.payload.message_id,
                     message.source,
@@ -90,6 +94,57 @@ pub trait Node {
                     generate_ok_message,
                 ))
             }
+            MessageType::Broadcast(broadcast_message) => {
+                if let Some(m) = self.check_initialised(&message.source, message.payload.message_id)
+                {
+                    return m;
+                }
+
+                self.handle_broadcast(MessageContext::new(
+                    message.payload.message_id,
+                    message.source,
+                    broadcast_message,
+                ))
+            }
+            MessageType::BroadcastOk => self.handle_broadcast_ok(MessageContext::new(
+                message.payload.message_id,
+                message.source,
+                (),
+            )),
+            MessageType::Read => {
+                if let Some(m) = self.check_initialised(&message.source, message.payload.message_id)
+                {
+                    return m;
+                }
+
+                self.handle_read(MessageContext::new(
+                    message.payload.message_id,
+                    message.source,
+                    (),
+                ))
+            }
+            MessageType::ReadOk(read_ok_message) => self.handle_read_ok(MessageContext::new(
+                message.payload.message_id,
+                message.source,
+                read_ok_message,
+            )),
+            MessageType::Topology(topology_message) => {
+                if let Some(m) = self.check_initialised(&message.source, message.payload.message_id)
+                {
+                    return m;
+                }
+
+                self.handle_topology(MessageContext::new(
+                    message.payload.message_id,
+                    message.source,
+                    topology_message,
+                ))
+            }
+            MessageType::TopologyOk => self.handle_topology_ok(MessageContext::new(
+                message.payload.message_id,
+                message.source,
+                (),
+            )),
         }
     }
 
@@ -136,6 +191,30 @@ pub trait Node {
         unreachable!();
     }
 
+    fn handle_broadcast(&mut self, _message_context: MessageContext<BroadcastMessage>) -> Message {
+        unimplemented!();
+    }
+
+    fn handle_broadcast_ok(&mut self, _message_context: MessageContext<()>) -> Message {
+        unreachable!();
+    }
+
+    fn handle_read(&mut self, _message_context: MessageContext<()>) -> Message {
+        unimplemented!();
+    }
+
+    fn handle_read_ok(&mut self, _message_context: MessageContext<ReadOkMessage>) -> Message {
+        unreachable!();
+    }
+
+    fn handle_topology(&mut self, _message_context: MessageContext<TopologyMessage>) -> Message {
+        unimplemented!();
+    }
+
+    fn handle_topology_ok(&mut self, _message_context: MessageContext<()>) -> Message {
+        unreachable!();
+    }
+
     fn check_initialised(&mut self, source: &str, id: Option<u32>) -> Option<Message> {
         if self.get_cluster_information().is_none() {
             Some(Message {
@@ -166,6 +245,9 @@ impl MessageMetadata for InitMessage {}
 impl MessageMetadata for ErrorMessage {}
 impl MessageMetadata for EchoMessage {}
 impl MessageMetadata for GenerateOkMessage {}
+impl MessageMetadata for BroadcastMessage {}
+impl MessageMetadata for ReadOkMessage {}
+impl MessageMetadata for TopologyMessage {}
 
 pub struct Runtime<'node> {
     node: &'node mut dyn Node,
@@ -261,12 +343,12 @@ where
 
     pub fn create_reply(
         &self,
-        cluster_infromation: &ClusterInformation,
+        cluster_information: &ClusterInformation,
         message_id: u32,
         message_type: MessageType,
     ) -> Message {
         Message {
-            source: cluster_infromation.get_node_id().to_owned(),
+            source: cluster_information.get_node_id().to_owned(),
             destination: self.get_source().to_string(),
             payload: Payload {
                 message_type,
@@ -278,6 +360,8 @@ where
 }
 
 pub mod message {
+    use std::collections::HashMap;
+
     use serde::{Deserialize, Serialize};
     use serde_json::Value;
 
@@ -326,6 +410,18 @@ pub mod message {
         Generage,
         #[serde(rename = "generate_ok")]
         GenerateOk(GenerateOkMessage),
+        #[serde(rename = "broadcast")]
+        Broadcast(BroadcastMessage),
+        #[serde(rename = "broadcast_ok")]
+        BroadcastOk,
+        #[serde(rename = "read")]
+        Read,
+        #[serde(rename = "read_ok")]
+        ReadOk(ReadOkMessage),
+        #[serde(rename = "topology")]
+        Topology(TopologyMessage),
+        #[serde(rename = "topology_ok")]
+        TopologyOk,
     }
 
     #[derive(Deserialize, Serialize, Debug)]
@@ -354,6 +450,21 @@ pub mod message {
     #[derive(Deserialize, Serialize, Debug)]
     pub struct GenerateOkMessage {
         pub id: String,
+    }
+
+    #[derive(Deserialize, Serialize, Debug)]
+    pub struct BroadcastMessage {
+        pub message: i32,
+    }
+
+    #[derive(Deserialize, Serialize, Debug)]
+    pub struct ReadOkMessage {
+        pub messages: Vec<i32>,
+    }
+
+    #[derive(Deserialize, Serialize, Debug)]
+    pub struct TopologyMessage {
+        pub topology: HashMap<String, Vec<String>>,
     }
 }
 
