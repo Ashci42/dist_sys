@@ -1,7 +1,6 @@
 use anyhow::Context;
 use dist_sys::{
-    message::{BroadcastMessage, Message, MessageType, ReadOkMessage},
-    ClusterInformation, MessageContext, MessageId, Node, Runtime,
+    message::{BroadcastMessage, MessageType, ReadOkMessage, TopologyMessage}, ClusterInformation, MessageContext, MessageId, MessageSender, Node, Runtime
 };
 
 fn main() -> anyhow::Result<()> {
@@ -41,7 +40,7 @@ impl Node for SingleNodeBroadcastNode {
         self.cluster_information = Some(cluster_infromation);
     }
 
-    fn handle_broadcast(&mut self, message_context: MessageContext<BroadcastMessage>) -> Message {
+    fn handle_broadcast(&mut self, message_context: MessageContext<BroadcastMessage>, message_sender: &MessageSender) {
         self.messages.push(message_context.get_metadata().message);
         let next_message_id = self.get_message_id().get_next_id();
         let cluster_information = self
@@ -49,43 +48,47 @@ impl Node for SingleNodeBroadcastNode {
             .as_ref()
             .expect("Should have sent an error message if cluster information is none");
 
-        message_context.create_reply(
+        let message = message_context.create_reply(
             cluster_information,
             next_message_id,
             MessageType::BroadcastOk,
-        )
+        );
+        message_sender.send_message(&message).unwrap();
     }
 
-    fn handle_read(&mut self, message_context: MessageContext<()>) -> Message {
+    fn handle_read(&mut self, message_context: MessageContext<()>, message_sender: &MessageSender) {
         let next_message_id = self.get_message_id().get_next_id();
         let cluster_information = self
             .cluster_information
             .as_ref()
             .expect("Should have sent an error message if cluster information is none");
 
-        message_context.create_reply(
+        let message = message_context.create_reply(
             cluster_information,
             next_message_id,
             MessageType::ReadOk(ReadOkMessage {
                 messages: self.messages.clone(),
             }),
-        )
+        );
+        message_sender.send_message(&message).unwrap();
     }
 
     fn handle_topology(
         &mut self,
-        message_context: MessageContext<dist_sys::message::TopologyMessage>,
-    ) -> Message {
+        message_context: MessageContext<TopologyMessage>,
+        message_sender: &MessageSender
+    ) {
         let next_message_id = self.get_message_id().get_next_id();
         let cluster_information = self
             .cluster_information
             .as_ref()
             .expect("Should have sent an error message if cluster information is none");
 
-        message_context.create_reply(
+        let message = message_context.create_reply(
             cluster_information,
             next_message_id,
             MessageType::TopologyOk,
-        )
+        );
+        message_sender.send_message(&message).unwrap();
     }
 }

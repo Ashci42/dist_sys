@@ -1,7 +1,6 @@
 use anyhow::Context;
 use dist_sys::{
-    message::{GenerateOkMessage, Message, MessageType},
-    ClusterInformation, MessageContext, MessageId, Node, Runtime,
+    message::{GenerateOkMessage, MessageType}, ClusterInformation, MessageContext, MessageId, MessageSender, Node, Runtime
 };
 
 fn main() -> anyhow::Result<()> {
@@ -40,18 +39,19 @@ impl Node for UniqueIdGenerationNode {
         self.cluster_information = Some(cluster_infromation)
     }
 
-    fn handle_generate(&mut self, message_context: MessageContext<()>) -> Message {
+    fn handle_generate(&mut self, message_context: MessageContext<()>, message_sender: &MessageSender) {
         let next_message_id = self.get_message_id().get_next_id();
         let cluster_information = self
             .cluster_information
             .as_ref()
             .expect("Should have sent an error message if cluster information is none");
-        message_context.create_reply(
+        let message = message_context.create_reply(
             cluster_information,
             next_message_id,
             MessageType::GenerateOk(GenerateOkMessage {
                 id: format!("{}-{}", cluster_information.get_node_id(), next_message_id),
             }),
-        )
+        );
+        message_sender.send_message(&message).unwrap();
     }
 }

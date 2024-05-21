@@ -1,7 +1,6 @@
 use anyhow::Context;
 use dist_sys::{
-    message::{EchoMessage, Message, MessageType},
-    ClusterInformation, MessageContext, MessageId, Node, Runtime,
+    message::{EchoMessage, MessageType}, ClusterInformation, MessageContext, MessageId, MessageSender, Node, Runtime
 };
 
 fn main() -> anyhow::Result<()> {
@@ -40,18 +39,19 @@ impl Node for EchoNode {
         self.cluster_information = Some(cluster_infromation);
     }
 
-    fn handle_echo(&mut self, message_context: MessageContext<EchoMessage>) -> Message {
+    fn handle_echo(&mut self, message_context: MessageContext<EchoMessage>, message_sender: &MessageSender) {
         let next_message_id = self.get_message_id().get_next_id();
         let cluster_information = self
             .cluster_information
             .as_ref()
             .expect("Should have sent an error message if cluster information is none");
-        message_context.create_reply(
+        let out_message = message_context.create_reply(
             cluster_information,
             next_message_id,
             MessageType::EchoOk(EchoMessage {
                 echo: message_context.get_metadata().echo.clone(),
             }),
-        )
+        );
+        message_sender.send_message(&out_message).unwrap();
     }
 }
