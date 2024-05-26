@@ -85,30 +85,32 @@ where
     OutMessage: Serialize,
 {
     pub fn reply(&mut self, payload: OutMessage) {
-        if self.node_information.is_none() {
-            panic!("Cannot send message without node information");
-        }
-
         if self.sender_information.is_none() {
             panic!("Cannot send message without sender information");
         }
 
+        self.check_node_information();
         let sender_information = self.sender_information.take().unwrap();
-        let out_message = Message {
-            source: self.node_information.as_ref().unwrap().id.clone(),
-            destination: sender_information.source,
-            payload: Payload {
-                message_type: payload,
-                message_id: Some(self.get_next_message_id()),
-                in_reply_to: sender_information.message_id,
-            },
-        };
-        let out_message = serde_json::to_string(&out_message).expect("Failed to serialise message");
-        println!("{out_message}");
+        self.send(
+            sender_information.source,
+            payload,
+            sender_information.message_id,
+        );
     }
 
     pub fn register_node_information(&mut self, node_information: NodeInformation) {
         self.node_information = Some(node_information);
+    }
+
+    pub fn node_id(&self) -> Option<&str> {
+        self.node_information
+            .as_ref()
+            .map(|node_information| node_information.id.as_str())
+    }
+
+    pub fn send_to(&mut self, destination: String, payload: OutMessage) {
+        self.check_node_information();
+        self.send(destination, payload, None);
     }
 
     fn get_next_message_id(&mut self) -> u32 {
@@ -119,6 +121,26 @@ where
 
     fn register_sender_information(&mut self, sender_information: SenderInformation) {
         self.sender_information = Some(sender_information);
+    }
+
+    fn check_node_information(&self) {
+        if self.node_information.is_none() {
+            panic!("Cannot send message without node information");
+        }
+    }
+
+    fn send(&mut self, destination: String, payload: OutMessage, in_reply_to: Option<u32>) {
+        let out_message = Message {
+            source: self.node_information.as_ref().unwrap().id.clone(),
+            destination,
+            payload: Payload {
+                message_type: payload,
+                message_id: Some(self.get_next_message_id()),
+                in_reply_to,
+            },
+        };
+        let out_message = serde_json::to_string(&out_message).expect("Failed to serialise message");
+        println!("{out_message}");
     }
 }
 
