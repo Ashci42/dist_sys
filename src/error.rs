@@ -1,0 +1,13 @@
+pub const TIMEOUT: u16 = 0;
+pub const NODE_NOT_FOUND: u16 = 1;
+pub const NOT_SUPPORTED: u16 = 10;
+pub const TEMPORARILY_UNAVAILABLE: u16 = 11;
+pub const MALFORMED_REQUEST: u16 = 12;
+pub const CRASH: u16 = 13;
+pub const ABORT: u16 = 14;
+pub const KEY_DOES_NOT_EXIST: u16 = 20;
+pub const KEY_ALREADY_EXISTS: u16 = 21;
+pub const PRECONDITION_FAILED: u16 = 22;
+pub const TXN_CONFLICT: u16 = 30;
+pub const WRONG_NODE: u16 = 1001;
+pub const UNINITIALISED: u16 = 1002;

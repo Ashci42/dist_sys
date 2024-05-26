@@ -1,57 +1,55 @@
-use anyhow::Context;
-use dist_sys::{
-    message::{GenerateOkMessage, MessageType}, ClusterInformation, MessageContext, MessageId, MessageSender, Node, Runtime
-};
+use dist_sys::{InitMessage, MessageSender, Node, NodeInformation, Runtime};
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
-fn main() -> anyhow::Result<()> {
-    let mut unique_id_generation_node = UniqueIdGenerationNode::new();
-    let mut runtime = Runtime::new(&mut unique_id_generation_node);
-
-    runtime.run().context("Node run failed")?;
-
-    Ok(())
+fn main() {
+    let unique_id_generation_node = UniqueIdGenerationNode;
+    let mut runtime = Runtime::new(unique_id_generation_node);
+    runtime.run();
 }
 
-struct UniqueIdGenerationNode {
-    message_id: MessageId,
-    cluster_information: Option<ClusterInformation>,
+#[derive(Deserialize, Serialize)]
+#[serde(tag = "type")]
+enum InUniqueIdGenerationMessage {
+    #[serde(rename = "init")]
+    Init(InitMessage),
+    #[serde(rename = "generate")]
+    Generage,
 }
 
-impl UniqueIdGenerationNode {
-    fn new() -> Self {
-        Self {
-            message_id: MessageId::new(),
-            cluster_information: None,
+#[derive(Deserialize, Serialize)]
+#[serde(tag = "type")]
+enum OutUniqueIdGenerationMessage {
+    #[serde(rename = "init_ok")]
+    Init,
+    #[serde(rename = "generate_ok")]
+    Generate(GenerateOkPayload),
+}
+
+struct UniqueIdGenerationNode;
+
+impl Node<InUniqueIdGenerationMessage, OutUniqueIdGenerationMessage> for UniqueIdGenerationNode {
+    fn handle_message(
+        &mut self,
+        message: InUniqueIdGenerationMessage,
+        message_sender: &mut MessageSender<OutUniqueIdGenerationMessage>,
+    ) {
+        match message {
+            InUniqueIdGenerationMessage::Init(payload) => {
+                message_sender.register_node_information(NodeInformation::from(payload));
+                message_sender.reply(OutUniqueIdGenerationMessage::Init);
+            }
+            InUniqueIdGenerationMessage::Generage => {
+                let id = Uuid::new_v4().to_string();
+                message_sender.reply(OutUniqueIdGenerationMessage::Generate(GenerateOkPayload {
+                    id,
+                }));
+            }
         }
     }
 }
 
-impl Node for UniqueIdGenerationNode {
-    fn get_cluster_information(&self) -> Option<&ClusterInformation> {
-        self.cluster_information.as_ref()
-    }
-
-    fn get_message_id(&mut self) -> &mut MessageId {
-        &mut self.message_id
-    }
-
-    fn set_cluster_infromation(&mut self, cluster_infromation: ClusterInformation) {
-        self.cluster_information = Some(cluster_infromation)
-    }
-
-    fn handle_generate(&mut self, message_context: MessageContext<()>, message_sender: &MessageSender) {
-        let next_message_id = self.get_message_id().get_next_id();
-        let cluster_information = self
-            .cluster_information
-            .as_ref()
-            .expect("Should have sent an error message if cluster information is none");
-        let message = message_context.create_reply(
-            cluster_information,
-            next_message_id,
-            MessageType::GenerateOk(GenerateOkMessage {
-                id: format!("{}-{}", cluster_information.get_node_id(), next_message_id),
-            }),
-        );
-        message_sender.send_message(&message).unwrap();
-    }
+#[derive(Deserialize, Serialize, Debug)]
+struct GenerateOkPayload {
+    id: String,
 }

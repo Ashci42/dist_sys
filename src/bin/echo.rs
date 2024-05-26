@@ -1,57 +1,51 @@
-use anyhow::Context;
-use dist_sys::{
-    message::{EchoMessage, MessageType}, ClusterInformation, MessageContext, MessageId, MessageSender, Node, Runtime
-};
+use dist_sys::{InitMessage, MessageSender, Node, NodeInformation, Runtime};
+use serde::{Deserialize, Serialize};
 
-fn main() -> anyhow::Result<()> {
-    let mut echo_node = EchoNode::new();
-    let mut runtime = Runtime::new(&mut echo_node);
-
-    runtime.run().context("Node run failed")?;
-
-    Ok(())
+fn main() {
+    let echo_node = EchoNode;
+    let mut runtime = Runtime::new(echo_node);
+    runtime.run();
 }
 
-struct EchoNode {
-    message_id: MessageId,
-    cluster_information: Option<ClusterInformation>,
+#[derive(Deserialize, Serialize)]
+#[serde(tag = "type")]
+enum InEchoMessage {
+    #[serde(rename = "init")]
+    Init(InitMessage),
+    #[serde(rename = "echo")]
+    Echo(EchoPayload),
 }
 
-impl EchoNode {
-    fn new() -> Self {
-        Self {
-            message_id: MessageId::new(),
-            cluster_information: None,
+#[derive(Deserialize, Serialize)]
+#[serde(tag = "type")]
+enum OutEchoMessage {
+    #[serde(rename = "init_ok")]
+    Init,
+    #[serde(rename = "echo_ok")]
+    Echo(EchoPayload),
+}
+
+struct EchoNode;
+
+impl Node<InEchoMessage, OutEchoMessage> for EchoNode {
+    fn handle_message(
+        &mut self,
+        message: InEchoMessage,
+        message_sender: &mut MessageSender<OutEchoMessage>,
+    ) {
+        match message {
+            InEchoMessage::Init(payload) => {
+                message_sender.register_node_information(NodeInformation::from(payload));
+                message_sender.reply(OutEchoMessage::Init);
+            }
+            InEchoMessage::Echo(payload) => {
+                message_sender.reply(OutEchoMessage::Echo(EchoPayload { echo: payload.echo }));
+            }
         }
     }
 }
 
-impl Node for EchoNode {
-    fn get_cluster_information(&self) -> Option<&ClusterInformation> {
-        self.cluster_information.as_ref()
-    }
-
-    fn get_message_id(&mut self) -> &mut MessageId {
-        &mut self.message_id
-    }
-
-    fn set_cluster_infromation(&mut self, cluster_infromation: ClusterInformation) {
-        self.cluster_information = Some(cluster_infromation);
-    }
-
-    fn handle_echo(&mut self, message_context: MessageContext<EchoMessage>, message_sender: &MessageSender) {
-        let next_message_id = self.get_message_id().get_next_id();
-        let cluster_information = self
-            .cluster_information
-            .as_ref()
-            .expect("Should have sent an error message if cluster information is none");
-        let out_message = message_context.create_reply(
-            cluster_information,
-            next_message_id,
-            MessageType::EchoOk(EchoMessage {
-                echo: message_context.get_metadata().echo.clone(),
-            }),
-        );
-        message_sender.send_message(&out_message).unwrap();
-    }
+#[derive(Deserialize, Serialize)]
+struct EchoPayload {
+    echo: String,
 }

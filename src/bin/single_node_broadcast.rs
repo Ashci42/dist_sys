@@ -1,94 +1,88 @@
-use anyhow::Context;
-use dist_sys::{
-    message::{BroadcastMessage, MessageType, ReadOkMessage, TopologyMessage}, ClusterInformation, MessageContext, MessageId, MessageSender, Node, Runtime
-};
+use std::collections::HashMap;
 
-fn main() -> anyhow::Result<()> {
-    let mut single_node_broadcast_node = SingleNodeBroadcastNode::new();
-    let mut runtime = Runtime::new(&mut single_node_broadcast_node);
-    runtime.run().context("Node run failed")?;
+use dist_sys::{InitMessage, MessageSender, Node, NodeInformation, Runtime};
+use serde::{Deserialize, Serialize};
 
-    Ok(())
+fn main() {
+    let single_node_broadcast_node = SingleNodeBroadcastNode::new();
+    let mut runtime = Runtime::new(single_node_broadcast_node);
+    runtime.run();
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(tag = "type")]
+enum InSingleNodeBroadcastMessage {
+    #[serde(rename = "init")]
+    Init(InitMessage),
+    #[serde(rename = "broadcast")]
+    Broadcast(BroadcastPayload),
+    #[serde(rename = "read")]
+    Read,
+    #[serde(rename = "topology")]
+    Topology(TopologyPayload),
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(tag = "type")]
+enum OutSingleNodeBroadcastMessage {
+    #[serde(rename = "init_ok")]
+    Init,
+    #[serde(rename = "broadcast_ok")]
+    Broadcast,
+    #[serde(rename = "read_ok")]
+    Read(ReadOkPayload),
+    #[serde(rename = "topology_ok")]
+    Topology,
 }
 
 struct SingleNodeBroadcastNode {
-    message_id: MessageId,
-    cluster_information: Option<ClusterInformation>,
     messages: Vec<i32>,
 }
 
 impl SingleNodeBroadcastNode {
     fn new() -> Self {
-        Self {
-            message_id: MessageId::new(),
-            cluster_information: None,
-            messages: vec![],
+        Self { messages: vec![] }
+    }
+}
+
+impl Node<InSingleNodeBroadcastMessage, OutSingleNodeBroadcastMessage> for SingleNodeBroadcastNode {
+    fn handle_message(
+        &mut self,
+        message: InSingleNodeBroadcastMessage,
+        message_sender: &mut MessageSender<OutSingleNodeBroadcastMessage>,
+    ) {
+        match message {
+            InSingleNodeBroadcastMessage::Init(payload) => {
+                message_sender.register_node_information(NodeInformation::from(payload));
+                message_sender.reply(OutSingleNodeBroadcastMessage::Init);
+            }
+            InSingleNodeBroadcastMessage::Broadcast(payload) => {
+                self.messages.push(payload.message);
+                message_sender.reply(OutSingleNodeBroadcastMessage::Broadcast);
+            }
+            InSingleNodeBroadcastMessage::Read => {
+                message_sender.reply(OutSingleNodeBroadcastMessage::Read(ReadOkPayload {
+                    messages: self.messages.clone(),
+                }));
+            }
+            InSingleNodeBroadcastMessage::Topology(_payload) => {
+                message_sender.reply(OutSingleNodeBroadcastMessage::Topology);
+            }
         }
     }
 }
 
-impl Node for SingleNodeBroadcastNode {
-    fn get_cluster_information(&self) -> Option<&ClusterInformation> {
-        self.cluster_information.as_ref()
-    }
+#[derive(Deserialize, Serialize, Debug)]
+struct BroadcastPayload {
+    message: i32,
+}
 
-    fn get_message_id(&mut self) -> &mut MessageId {
-        &mut self.message_id
-    }
+#[derive(Deserialize, Serialize, Debug)]
+struct ReadOkPayload {
+    messages: Vec<i32>,
+}
 
-    fn set_cluster_infromation(&mut self, cluster_infromation: ClusterInformation) {
-        self.cluster_information = Some(cluster_infromation);
-    }
-
-    fn handle_broadcast(&mut self, message_context: MessageContext<BroadcastMessage>, message_sender: &MessageSender) {
-        self.messages.push(message_context.get_metadata().message);
-        let next_message_id = self.get_message_id().get_next_id();
-        let cluster_information = self
-            .cluster_information
-            .as_ref()
-            .expect("Should have sent an error message if cluster information is none");
-
-        let message = message_context.create_reply(
-            cluster_information,
-            next_message_id,
-            MessageType::BroadcastOk,
-        );
-        message_sender.send_message(&message).unwrap();
-    }
-
-    fn handle_read(&mut self, message_context: MessageContext<()>, message_sender: &MessageSender) {
-        let next_message_id = self.get_message_id().get_next_id();
-        let cluster_information = self
-            .cluster_information
-            .as_ref()
-            .expect("Should have sent an error message if cluster information is none");
-
-        let message = message_context.create_reply(
-            cluster_information,
-            next_message_id,
-            MessageType::ReadOk(ReadOkMessage {
-                messages: self.messages.clone(),
-            }),
-        );
-        message_sender.send_message(&message).unwrap();
-    }
-
-    fn handle_topology(
-        &mut self,
-        message_context: MessageContext<TopologyMessage>,
-        message_sender: &MessageSender
-    ) {
-        let next_message_id = self.get_message_id().get_next_id();
-        let cluster_information = self
-            .cluster_information
-            .as_ref()
-            .expect("Should have sent an error message if cluster information is none");
-
-        let message = message_context.create_reply(
-            cluster_information,
-            next_message_id,
-            MessageType::TopologyOk,
-        );
-        message_sender.send_message(&message).unwrap();
-    }
+#[derive(Deserialize, Serialize, Debug)]
+struct TopologyPayload {
+    topology: HashMap<String, Vec<String>>,
 }
