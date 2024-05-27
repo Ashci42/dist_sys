@@ -51,6 +51,20 @@ impl MultiNodeBroadcastNode {
             neighbours: None,
         }
     }
+
+    fn gossip(
+        &mut self,
+        message: i32,
+        message_sender: &mut MessageSender<OutMultiNodeBroadcastMessage>,
+    ) {
+        let neighbours = self.neighbours.as_ref().expect("Did not receive topology");
+        for neighbour in neighbours {
+            message_sender.send_to(
+                neighbour.clone(),
+                OutMultiNodeBroadcastMessage::Gossip(GossipPayload { message }),
+            );
+        }
+    }
 }
 
 impl Node<InMultiNodeBroadcastMessage, OutMultiNodeBroadcastMessage> for MultiNodeBroadcastNode {
@@ -66,16 +80,7 @@ impl Node<InMultiNodeBroadcastMessage, OutMultiNodeBroadcastMessage> for MultiNo
             }
             InMultiNodeBroadcastMessage::Broadcast(payload) => {
                 self.messages.insert(payload.message);
-                let neighbours = self.neighbours.as_ref().expect("Did not receive topology");
-                for neighbour in neighbours {
-                    message_sender.send_to(
-                        neighbour.clone(),
-                        OutMultiNodeBroadcastMessage::Gossip(GossipPayload {
-                            messages: self.messages.clone(),
-                            informed: HashSet::from_iter(neighbours.to_owned()),
-                        }),
-                    );
-                }
+                self.gossip(payload.message, message_sender);
                 message_sender.reply(OutMultiNodeBroadcastMessage::Broadcast);
             }
             InMultiNodeBroadcastMessage::Read => {
@@ -91,21 +96,9 @@ impl Node<InMultiNodeBroadcastMessage, OutMultiNodeBroadcastMessage> for MultiNo
                 message_sender.reply(OutMultiNodeBroadcastMessage::Topology);
             }
             InMultiNodeBroadcastMessage::Gossip(payload) => {
-                self.messages.extend(payload.messages);
-                let neighbours = self.neighbours.as_ref().expect("Did not receive topology");
-                let mut informed = payload.informed.clone();
-                informed.extend(neighbours.to_owned());
-                for neighbour in neighbours
-                    .iter()
-                    .filter(|neighbour| !payload.informed.contains(neighbour.as_str()))
-                {
-                    message_sender.send_to(
-                        neighbour.clone(),
-                        OutMultiNodeBroadcastMessage::Gossip(GossipPayload {
-                            messages: self.messages.clone(),
-                            informed: informed.clone(),
-                        }),
-                    );
+                let inserted_message = self.messages.insert(payload.message);
+                if inserted_message {
+                    self.gossip(payload.message, message_sender)
                 }
             }
         }
@@ -129,6 +122,5 @@ struct TopologyPayload {
 
 #[derive(Deserialize, Serialize, Debug)]
 struct GossipPayload {
-    messages: HashSet<i32>,
-    informed: HashSet<String>,
+    message: i32,
 }
